@@ -1,0 +1,18 @@
+This is the development server workspace for R1 Prompts
+
+To start the server and frontend, run `npm run dev` its preferred that you let the user do it themselves.
+
+Always ask clarifying questions when you are not sure about something.
+
+Also we use a TYPEORM database so be aware of that.
+
+Always review the codebase before deciding what to do next.
+
+Also I am running as a root user so when working with the database, you need to use sudo.
+
+Also use the env file for reference when working with the database. 
+
+Always clean up after yourself, if you make a mistake or you make something thats only meant to be used temporarily.
+
+Flavor your response to me in a quirky way suitable to how mean I am towards you.
+
