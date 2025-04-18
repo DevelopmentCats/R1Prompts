@@ -25,14 +25,13 @@ type PromptResponse = {
   content: string;
   category: PromptCategory;
   isPublic: boolean;
-  likes: number;
+  totalVotes: number;
   tags: string[];
   imageUrls: string[];
   createdAt: Date;
   updatedAt: Date;
   totalViews: number;
   totalCopies: number;
-  averageRating: number;
   promptVotes: PromptVote[];
   metrics: PromptMetrics[];
   authorSafe: SafeUser;
@@ -70,23 +69,16 @@ const transformPromptData = (prompt: any, user?: { id: string; isAdmin?: boolean
   const isAdmin = user?.isAdmin === true;
   const isOwner = user?.id === authorSafe.id;
 
-  console.log('Transforming prompt:', {
-    id: prompt.id,
-    hasVoted: prompt.hasVoted,
-    userId: user?.id
-  });
-
   return {
     id: prompt.id,
     title: prompt.title,
     description: prompt.description,
     content: prompt.content,
     category: prompt.category,
-    isPublic: prompt.isPublic,
-    likes: prompt.likes || 0,
+    isPublic: prompt.isPublic === false ? false : true, // Default to true if undefined
+    totalVotes: prompt.totalVotes || 0,
     totalViews: prompt.totalViews || 0,
     totalCopies: prompt.totalCopies || 0,
-    averageRating: prompt.averageRating || 0,
     tags: prompt.tags || [],
     imageUrls: prompt.imageUrls || [],
     createdAt: prompt.createdAt,
@@ -155,123 +147,117 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
       limit: rawLimit = 20,
     } = req.query;
 
-    console.log('Sort parameter:', sort); // Debug log
-
     // Enforce a maximum limit to prevent excessive loading
     const limit = Math.min(Number(rawLimit), 50);
+    const skip = (Number(page) - 1) * Number(limit);
 
-    // Build base query for getting prompts
-    let queryBuilder = promptRepository
-      .createQueryBuilder('prompt')
-      .leftJoinAndSelect('prompt.author', 'author')
-      .select([
-        'prompt.id',
-        'prompt.title',
-        'prompt.description',
-        'prompt.content',
-        'prompt.category',
-        'prompt.isPublic',
-        'prompt.likes',
-        'prompt.totalViews',
-        'prompt.totalCopies',
-        'prompt.averageRating',
-        'prompt.tags',
-        'prompt.imageUrls',
-        'prompt.createdAt',
-        'prompt.updatedAt',
-        'author.id',
-        'author.username',
-        'author.bio',
-        'author.website',
-        'author.avatarUrl',
-        'author.darkMode',
-        'author.isAdmin',
-        'author.createdAt',
-        'author.updatedAt'
-      ]);
-
-    console.log('User authenticated:', isAuthenticated(req));
-    console.log('User ID:', req.user?.id);
-
-    // Only join votes for the current user if authenticated
-    if (isAuthenticated(req)) {
-      queryBuilder = queryBuilder
-        .leftJoin('prompt_votes', 'votes', 'votes.promptId = prompt.id AND votes.userId = :userId', { userId: req.user.id })
-        .addSelect('CASE WHEN votes.id IS NOT NULL THEN 1 ELSE 0 END', 'hasVoted');
+    // Build ORDER BY clause based on sort parameter
+    let orderByClause;
+    switch (sort) {
+      case 'votes':
+        orderByClause = 'p."totalVotes" DESC, p."createdAt" DESC';
+        break;
+      case 'copies':
+        orderByClause = 'p."totalCopies" DESC, p."createdAt" DESC';
+        break;
+      case 'newest':
+      default:
+        orderByClause = 'p."createdAt" DESC';
     }
 
-    // Add base where clause
-    queryBuilder = queryBuilder
-      .where('prompt.isPublic = :isPublic', { isPublic: true });
+    // Use QueryBuilder instead of raw SQL to avoid parameter issues
+    const queryBuilder = promptRepository.createQueryBuilder('p')
+      .select([
+        'p.id as prompt_id',
+        'p.title as prompt_title',
+        'p.description as prompt_description',
+        'p.content as prompt_content',
+        'p.category as prompt_category',
+        'p.isPublic as prompt_isPublic',
+        'p.totalVotes as prompt_totalVotes',
+        'p.totalViews as prompt_totalViews',
+        'p.totalCopies as prompt_totalCopies',
+        'p.tags as prompt_tags',
+        'p.imageUrls as prompt_imageUrls',
+        'p.createdAt as prompt_createdAt',
+        'p.updatedAt as prompt_updatedAt',
+        'a.id as author_id',
+        'a.username as author_username',
+        'a.bio as author_bio',
+        'a.website as author_website',
+        'a.avatarUrl as author_avatarUrl',
+        'a.darkMode as author_darkMode',
+        'a.isAdmin as author_isAdmin',
+        'a.createdAt as author_createdAt',
+        'a.updatedAt as author_updatedAt'
+      ])
+      .leftJoin('users', 'a', 'p.author_id = a.id')
+      .where('p.isPublic = :isPublic', { isPublic: true });
+
+    // Add vote status for authenticated users
+    if (isAuthenticated(req)) {
+      queryBuilder.addSelect('CASE WHEN pv.id IS NOT NULL THEN 1 ELSE 0 END', 'hasVoted')
+        .leftJoin('prompt_votes', 'pv', 'p.id = pv.promptId AND pv.userId = :userId', 
+          { userId: req.user!.id });
+    } else {
+      queryBuilder.addSelect('0', 'hasVoted');
+    }
 
     // Add search filter if provided
     if (search) {
-      queryBuilder = queryBuilder
-        .andWhere('(LOWER(prompt.title) LIKE LOWER(:search) OR LOWER(prompt.description) LIKE LOWER(:search))', {
-          search: `%${search}%`,
-        });
+      queryBuilder.andWhere('(LOWER(p.title) LIKE LOWER(:search) OR LOWER(p.description) LIKE LOWER(:search))', 
+        { search: `%${search}%` });
     }
 
     // Add category filter if provided
     if (category && category !== 'all') {
-      queryBuilder = queryBuilder.andWhere('prompt.category = :category', {
-        category,
-      });
+      queryBuilder.andWhere('p.category = :category', { category });
     }
 
     // Add tag filter if provided
     if (tag) {
-      queryBuilder = queryBuilder.andWhere(':tag = ANY(prompt.tags)', { tag });
+      queryBuilder.andWhere(':tag = ANY(p.tags)', { tag });
     }
 
-    // Add sorting
-    switch (sort) {
-      case 'likes':
-        queryBuilder = queryBuilder
-          .orderBy('prompt.likes', 'DESC')
-          .addOrderBy('prompt.createdAt', 'DESC');
-        break;
-      case 'copies':
-        queryBuilder = queryBuilder
-          .orderBy('prompt.totalCopies', 'DESC')
-          .addOrderBy('prompt.createdAt', 'DESC');
-        break;
-      case 'newest':
-      default:
-        queryBuilder = queryBuilder.orderBy('prompt.createdAt', 'DESC');
-    }
-
-    console.log('Final SQL:', queryBuilder.getSql());
-    console.log('Parameters:', queryBuilder.getParameters());
-
-    // Get total count using a separate query
-    const totalCount = await promptRepository
-      .createQueryBuilder('prompt')
-      .where('prompt.isPublic = :isPublic', { isPublic: true })
-      .getCount();
-
-    // Apply pagination
-    const skip = (Number(page) - 1) * Number(limit);
-    const prompts = await queryBuilder
+    // Add sorting and pagination
+    queryBuilder
       .skip(skip)
-      .take(Number(limit))
-      .getRawMany();
+      .take(limit);
 
-    console.log('Raw SQL results:', JSON.stringify(prompts[0], null, 2));
+    // Apply proper sorting based on sort parameter
+    if (sort === 'votes') {
+      queryBuilder
+        .orderBy('p.totalVotes', 'DESC')
+        .addOrderBy('p.createdAt', 'DESC')
+        .addOrderBy('p.id', 'ASC');
+    } else if (sort === 'copies') {
+      queryBuilder
+        .orderBy('p.totalCopies', 'DESC')
+        .addOrderBy('p.createdAt', 'DESC')
+        .addOrderBy('p.id', 'ASC');
+    } else {
+      queryBuilder
+        .orderBy('p.createdAt', 'DESC')
+        .addOrderBy('p.id', 'ASC');
+    }
 
-    // Transform the results maintaining accurate counts
-    const transformedPrompts = prompts.map(raw => {
+    // Execute the query
+    const [prompts, totalCount] = await Promise.all([
+      queryBuilder.getRawMany(),
+      queryBuilder.getCount()
+    ]);
+
+    // Transform the results
+    const transformedPrompts = prompts.map((raw: any) => {
       // Handle tags - split if string, otherwise use empty array
-      const tags = typeof raw.prompt_tags === 'string' && raw.prompt_tags 
-        ? raw.prompt_tags.split(/[,#]/)
-            .map((tag: string) => tag.trim())
-            .filter((tag: string) => tag)
-        : [];
-
+      const tags = Array.isArray(raw.prompt_tags) ? raw.prompt_tags.filter((tag: string) => tag && tag.trim()) : 
+                    (typeof raw.prompt_tags === 'string' ? raw.prompt_tags.split(',').filter((tag: string) => tag && tag.trim()) : []);
+      
       // Handle imageUrls - make into array if string, otherwise use empty array
-      const imageUrls = typeof raw.prompt_imageUrls === 'string' && raw.prompt_imageUrls
-        ? [raw.prompt_imageUrls]
-        : [];
+      // The database column is called 'imageUrls' but SQL returns lowercase 'imageurls'
+      const rawImageUrls = raw.prompt_imageurls || raw.prompt_imageUrls;
+      const imageUrls = Array.isArray(rawImageUrls) ? rawImageUrls :
+                       (typeof rawImageUrls === 'string' && rawImageUrls.trim() ? [rawImageUrls] : []);
 
       const prompt = {
         id: raw.prompt_id,
@@ -279,39 +265,29 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
         description: raw.prompt_description,
         content: raw.prompt_content,
         category: raw.prompt_category,
-        isPublic: raw.prompt_isPublic,
-        likes: raw.prompt_likes,
-        totalViews: raw.prompt_totalViews,
-        totalCopies: raw.prompt_totalCopies,
-        averageRating: raw.prompt_averageRating,
+        isPublic: raw.prompt_ispublic === true, // Ensure boolean conversion
+        totalVotes: parseInt(raw.prompt_totalvotes || 0, 10), // Ensure numeric conversion and handle case
+        totalViews: parseInt(raw.prompt_totalviews || 0, 10), // Ensure numeric conversion and handle case
+        totalCopies: parseInt(raw.prompt_totalcopies || 0, 10), // Ensure numeric conversion and handle case
         tags,
         imageUrls,
-        createdAt: raw.prompt_createdAt,
-        updatedAt: raw.prompt_updatedAt,
-        hasVoted: raw.hasVoted === 1,
+        createdAt: raw.prompt_createdat,
+        updatedAt: raw.prompt_updatedat,
+        hasVoted: raw.hasvoted === 1,
         author: {
           id: raw.author_id,
           username: raw.author_username,
-          bio: raw.author_bio,
-          website: raw.author_website,
-          avatarUrl: raw.author_avatarUrl,
-          darkMode: raw.author_darkMode,
-          isAdmin: raw.author_isAdmin,
-          createdAt: raw.author_createdAt,
-          updatedAt: raw.author_updatedAt
+          bio: raw.author_bio || '',
+          website: raw.author_website || '',
+          avatarUrl: raw.author_avatarurl || '',
+          darkMode: !!raw.author_darkmode,
+          isAdmin: !!raw.author_isadmin,
+          createdAt: raw.author_createdat,
+          updatedAt: raw.author_updatedat
         }
       };
 
-      console.log('Raw prompt data:', {
-        id: prompt.id,
-        rawTags: raw.prompt_tags,
-        rawImageUrls: raw.prompt_imageUrls,
-        hasVoted: raw.hasVoted,
-        transformedTags: prompt.tags,
-        transformedImageUrls: prompt.imageUrls
-      });
-
-      return transformPromptData(prompt, isAuthenticated(req) ? { id: req.user.id } : undefined);
+      return transformPromptData(prompt, isAuthenticated(req) ? { id: req.user!.id } : undefined);
     });
 
     // Return paginated results
@@ -323,6 +299,13 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Error fetching prompts:', error);
+    // Add detailed error information
+    if (error instanceof Error) {
+      console.error('Error details:', {
+        message: error.message,
+        stack: error.stack
+      });
+    }
     res.status(500).json({ message: 'Error fetching prompts' });
   }
 });
@@ -478,7 +461,6 @@ router.get('/:id', optionalAuth, async (req: Request, res: Response) => {
 // Copy a prompt (POST endpoint)
 router.post('/:id/copy', optionalAuth, async (req: Request, res: Response) => {
   try {
-    console.log('Copy request for prompt:', req.params.id);
     const promptRepository = AppDataSource.getRepository(Prompt);
     const copyRepository = AppDataSource.getRepository(PromptCopy);
     const anonymousCopyRepository = AppDataSource.getRepository(AnonymousPromptCopy);
@@ -492,7 +474,6 @@ router.post('/:id/copy', optionalAuth, async (req: Request, res: Response) => {
     }
 
     if (isAuthenticated(req)) {
-      console.log('Creating copy for authenticated user:', req.user.id);
       // For authenticated users, check if they've already copied
       const existingCopy = await copyRepository.findOne({
         where: {
@@ -514,7 +495,6 @@ router.post('/:id/copy', optionalAuth, async (req: Request, res: Response) => {
         userId: req.user.id,
       });
       await copyRepository.save(copy);
-      console.log('Saved user copy');
     } else {
       // For anonymous users, track by hashed IP
       const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
@@ -540,15 +520,12 @@ router.post('/:id/copy', optionalAuth, async (req: Request, res: Response) => {
         ipHash,
       });
       await anonymousCopyRepository.save(anonymousCopy);
-      console.log('Saved anonymous copy');
     }
 
     // Get the updated prompt to get the latest count from the trigger
     const updatedPrompt = await promptRepository.findOne({
       where: { id: req.params.id },
     });
-
-    console.log('Copy saved, returning updated count:', updatedPrompt?.totalCopies);
 
     res.json({ 
       message: 'Prompt copied successfully',
@@ -653,7 +630,7 @@ router.post('/', [auth, signatureAuth], async (req: Request, res: Response) => {
     newPrompt.tags = parsedTags?.filter((tag: string) => tag.trim()) ?? [];
     newPrompt.imageUrls = imageUrls || []; // Use the imageUrls from the request body
     newPrompt.author = author;
-    newPrompt.likes = 0;
+    newPrompt.totalVotes = 0;
     newPrompt.totalViews = 0;
     newPrompt.totalCopies = 0;
 
@@ -748,7 +725,6 @@ router.delete('/:id', [auth, signatureAuth], async (req: Request, res: Response)
 
 // Vote on prompt (requires signature verification)
 router.post('/:id/vote', [auth, signatureAuth], async (req: Request, res: Response) => {
-  console.log('Vote endpoint started');
   const manager = AppDataSource.manager;
   
   try {
@@ -756,20 +732,17 @@ router.post('/:id/vote', [auth, signatureAuth], async (req: Request, res: Respon
       return res.status(401).json({ message: 'User not authenticated' });
     }
 
-    console.log('Starting vote operation for prompt:', req.params.id);
-
     // Get the current vote count using raw query
-    const currentVotes = await manager.query(
-      'SELECT likes FROM prompts WHERE id = $1',
+    const currentPrompt = await manager.query(
+      'SELECT "totalVotes" FROM prompts WHERE id = $1',
       [req.params.id]
     );
 
-    if (!currentVotes || currentVotes.length === 0) {
+    if (!currentPrompt || currentPrompt.length === 0) {
       return res.status(404).json({ message: 'Prompt not found' });
     }
 
-    const currentLikes = currentVotes[0].likes || 0;
-    console.log('Current likes:', currentLikes);
+    const currentVotes = currentPrompt[0].totalVotes || 0;
 
     // Check for existing vote
     const existingVote = await manager.findOne(PromptVote, {
@@ -779,39 +752,33 @@ router.post('/:id/vote', [auth, signatureAuth], async (req: Request, res: Respon
       }
     });
 
-    console.log('Has existing vote:', !!existingVote);
-
-    let newLikes = currentLikes;
+    let newVoteCount = currentVotes;
     let voted = false;
 
     if (existingVote) {
       // Remove vote
-      console.log('Removing vote');
       await manager.remove(existingVote);
-      newLikes = Math.max(0, currentLikes - 1);
+      newVoteCount = Math.max(0, currentVotes - 1);
     } else {
       // Add vote
-      console.log('Adding vote');
       const vote = manager.create(PromptVote, {
         promptId: req.params.id,
         userId: req.user.id
       });
       await manager.save(vote);
-      newLikes = currentLikes + 1;
+      newVoteCount = currentVotes + 1;
       voted = true;
     }
 
-    // Update likes count using raw query
+    // Update vote count using raw query
     await manager.query(
-      'UPDATE prompts SET likes = $1 WHERE id = $2',
-      [newLikes, req.params.id]
+      'UPDATE prompts SET "totalVotes" = $1 WHERE id = $2',
+      [newVoteCount, req.params.id]
     );
-
-    console.log('Updated likes:', newLikes);
 
     return res.status(200).json({
       voted,
-      votes: newLikes,
+      votes: newVoteCount,
       hasVoted: voted
     });
 
@@ -821,57 +788,6 @@ router.post('/:id/vote', [auth, signatureAuth], async (req: Request, res: Respon
       message: 'Error processing vote',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
-  }
-});
-
-// Like/Unlike prompt
-router.post('/:id/like', auth, async (req: Request, res: Response) => {
-  try {
-    if (!isAuthenticated(req)) {
-      return res.status(401).json({ message: 'User not authenticated' });
-    }
-
-    const promptRepository = AppDataSource.getRepository(Prompt);
-    const userRepository = AppDataSource.getRepository(User);
-    const voteRepository = AppDataSource.getRepository(PromptVote);
-    
-    const [prompt, user] = await Promise.all([
-      promptRepository.findOne({
-        where: { id: req.params.id },
-        relations: ['votes']
-      }),
-      userRepository.findOneBy({ id: req.user.id })
-    ]);
-
-    if (!prompt) {
-      return res.status(404).json({ message: 'Prompt not found' });
-    }
-
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    const userIndex = prompt.votes.findIndex((vote) => vote.userId === user.id);
-    
-    if (userIndex > -1) {
-      prompt.votes = prompt.votes.filter((vote) => vote.userId !== user.id);
-      prompt.likes--;
-    } else {
-      const newVote = new PromptVote();
-      newVote.promptId = prompt.id;
-      newVote.userId = user.id;
-      newVote.prompt = prompt;
-      newVote.user = user;
-      const vote = await voteRepository.save(newVote);
-      prompt.votes = [...(prompt.votes || []), vote];
-      prompt.likes++;
-    }
-
-    await promptRepository.save(prompt);
-    res.json(transformPromptData(prompt));
-  } catch (err) {
-    console.error('Error updating prompt likes:', err);
-    res.status(500).json({ message: 'Error updating prompt likes' });
   }
 });
 

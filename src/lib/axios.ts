@@ -3,13 +3,14 @@ import * as CryptoJS from 'crypto-js';
 
 // Determine the base URL based on the environment
 const getBaseUrl = () => {
-  if (import.meta.env.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL.replace(/\/api$/, '');
+  // In development, use relative URL to leverage Vite's proxy
+  if (import.meta.env.DEV) {
+    return '';  // Empty string uses relative URL, which works with the Vite proxy
   }
   
-  // Development fallback - use IP address directly
-  if (import.meta.env.DEV) {
-    return 'http://192.168.1.214:5000';
+  // In production, use the API URL from env vars
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;  // API segment will be added when creating the instance
   }
   
   // Production fallback

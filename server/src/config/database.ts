@@ -15,12 +15,16 @@ import { RemoveTotalVotes1702413600000 } from '../migrations/1702413600000-Remov
 import { FixPromptTotals1702329231000 } from '../migrations/1702329231000-FixPromptTotals';
 import { AddPromptVoteUnique1735223655158 } from '../migrations/1735223655158-AddPromptVoteUnique';
 import { AddVoteTriggers1735748629000 } from '../migrations/1735748629000-AddVoteTriggers';
+import { AddPromptVoteTrigger1735798629000 } from '../migrations/1735798629000-AddPromptVoteTrigger';
+import { UpdateVotingSystem1735798630000 } from '../migrations/1735798630000-UpdateVotingSystem';
+import { RemoveAverageRating1735798640000 } from '../migrations/1735798640000-RemoveAverageRating';
 import * as dotenv from 'dotenv';
 
 // Load environment variables
 dotenv.config({ path: process.env.NODE_ENV === 'production' ? '.env' : '.env' });
 
-const isDevelopment = process.env.NODE_ENV !== 'production';
+// Force disable synchronize to prevent schema sync issues with existing database
+const synchronizeEnabled = false; // Set to false regardless of environment
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -29,8 +33,8 @@ export const AppDataSource = new DataSource({
   username: process.env.DB_USER || 'rabbitr1',
   password: process.env.DB_PASSWORD || 'Jennifer@97',
   database: process.env.DB_NAME || 'rabbitr1_prompts',
-  synchronize: isDevelopment,  // Only synchronize in development
-  logging: isDevelopment,
+  synchronize: synchronizeEnabled,  // Disabled synchronization to preserve database structure
+  logging: process.env.NODE_ENV !== 'production',
   entities: [User, Prompt, PromptMetrics, PromptVote, PromptCopy, ApiKey, GlobalStats, AnonymousPromptCopy],
   subscribers: [],
   migrations: [
@@ -42,5 +46,8 @@ export const AppDataSource = new DataSource({
     FixPromptTotals1702329231000,
     AddPromptVoteUnique1735223655158,
     AddVoteTriggers1735748629000,
+    AddPromptVoteTrigger1735798629000,
+    UpdateVotingSystem1735798630000,
+    RemoveAverageRating1735798640000,
   ],
 });

@@ -49,7 +49,7 @@ interface UserPrompt {
   title: string;
   description: string;
   category: PromptCategory;
-  likes: number;
+  totalVotes: number;
   totalCopies: number;
   totalViews: number;
   createdAt: string;
@@ -274,10 +274,13 @@ const Profile = () => {
                           <PromptCard
                             prompt={{
                               ...prompt,
-                              likes: prompt.likes || 0,
+                              totalVotes: prompt.totalVotes || 0,
                               tags: prompt.tags || [],
                               imageUrls: prompt.imageUrls || [],
                               isPublic: prompt.isPublic,
+                              content: '',
+                              updatedAt: new Date(),
+                              createdAt: new Date(prompt.createdAt),
                               authorSafe: {
                                 id: profileData.id,
                                 username: profileData.username,

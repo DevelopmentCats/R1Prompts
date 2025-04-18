@@ -84,21 +84,43 @@ router.post('/register', async (req: Request, res: Response) => {
 
 // Login
 router.post('/login', async (req: Request, res: Response) => {
+  console.log('Received login request:', {
+    reqBody: req.body,
+    headers: req.headers,
+    ip: req.ip,
+    path: req.path,
+    method: req.method
+  });
+  
   try {
     const userRepository = AppDataSource.getRepository(User);
     const { email, password } = req.body;
 
     if (!email || !password) {
+      console.log('Login failed: Missing email or password');
       return res.status(400).json({ message: 'Please provide email and password' });
     }
 
     // Find user by email 
     const normalizedEmail = email.toLowerCase();
+    const encryptedEmail = Encryption.encryptForLookup(normalizedEmail);
     
+    console.log(`Login attempt for email: ${normalizedEmail}`);
+    console.log(`Encrypted email: ${encryptedEmail}`);
+    
+    // Try two queries: one with encrypted email and one with raw email as fallback
     let user = await userRepository.findOne({ 
-      where: { email: normalizedEmail },
+      where: { email: encryptedEmail },
       select: ['id', 'username', 'password', 'isAdmin']
     });
+
+    if (!user) {
+      // Fallback to try raw email
+      user = await userRepository.findOne({ 
+        where: { email: normalizedEmail },
+        select: ['id', 'username', 'password', 'isAdmin']
+      });
+    }
 
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
@@ -114,7 +136,7 @@ router.post('/login', async (req: Request, res: Response) => {
     const token = jwt.sign(
       { 
         userId: user.id,
-        email: user.email
+        email: normalizedEmail // Use normalized email in token
       },
       process.env.JWT_SECRET!,
       { expiresIn: process.env.JWT_EXPIRES_IN }
@@ -124,7 +146,7 @@ router.post('/login', async (req: Request, res: Response) => {
     const apiKey = await ApiKeyManager.getOrCreateApiKey(user.id);
 
     // Return minimal user data needed for initial auth
-    res.json({ 
+    res.json({
       token,
       user: {
         id: user.id,

@@ -52,14 +52,14 @@ const Profile = () => {
       id: '1',
       title: 'Smart Assistant Setup',
       category: 'General',
-      likes: 45,
+      totalVotes: 45,
       isPublic: true,
     },
     {
       id: '2',
       title: 'Custom UI Generator',
       category: 'Generative UI',
-      likes: 32,
+      totalVotes: 32,
       isPublic: false,
     },
   ];
@@ -123,7 +123,7 @@ const Profile = () => {
                         <Stack spacing={1}>
                           <Heading size="md">{prompt.title}</Heading>
                           <Text color="gray.400">
-                            Category: {prompt.category} • {prompt.likes} likes
+                            Category: {prompt.category} • {prompt.totalVotes} votes
                           </Text>
                         </Stack>
                         <Stack direction="row" spacing={2}>

@@ -48,7 +48,7 @@ interface Prompt {
   description: string;
   content: string;
   category: PromptCategory;
-  likes: number;
+  totalVotes: number;
   totalCopies: number;
   totalViews: number;
   createdAt: string;
@@ -67,7 +67,7 @@ interface ExtendedPrompt extends Prompt {
 const PromptView = () => {
   const { id } = useParams();
   const [isVoted, setIsVoted] = useState(false);
-  const [likes, setLikes] = useState(0);
+  const [votes, setVotes] = useState(0);
   const queryClient = useQueryClient();
   const toast = useToast();
   const navigate = useNavigate();
@@ -86,7 +86,7 @@ const PromptView = () => {
     },
   });
 
-  // Update likes when prompt data changes
+  // Update total votes when prompt data changes
   useEffect(() => {
     if (prompt) {
       console.log('Prompt data:', {
@@ -97,7 +97,7 @@ const PromptView = () => {
         canEdit: prompt.canEdit,
         canDelete: prompt.canDelete
       });
-      setLikes(prompt.likes || 0);
+      setVotes(prompt.totalVotes || 0);
     }
   }, [prompt, user]);
 
@@ -138,10 +138,12 @@ const PromptView = () => {
     try {
       const response = await axiosInstance.post(`/prompts/${id}/vote`);
       setIsVoted(response.data.voted);
-      setLikes(response.data.likes);
+      setVotes(response.data.votes);
       // Invalidate both prompt and vote queries to ensure data consistency
       queryClient.invalidateQueries({ queryKey: ['prompt', id] });
       queryClient.invalidateQueries({ queryKey: ['promptVote', id] });
+      // Also invalidate the prompts list query to update the Explore page when navigating back
+      queryClient.invalidateQueries({ queryKey: ['prompts'] });
     } catch (error) {
       console.error('Error voting prompt:', error);
       toast({
@@ -217,6 +219,8 @@ const PromptView = () => {
             totalCopies: response.data.totalCopies,
           }));
         }
+        // Also invalidate the prompts list query
+        queryClient.invalidateQueries({ queryKey: ['prompts'] });
       } catch (error) {
         console.error('Error updating copy count:', error);
         // Roll back optimistic update
@@ -240,6 +244,8 @@ const PromptView = () => {
   const handleDelete = async () => {
     try {
       await axiosInstance.delete(`/prompts/${id}`);
+      // Invalidate prompts list query before navigating
+      queryClient.invalidateQueries({ queryKey: ['prompts'] });
       toast({
         title: 'Prompt deleted',
         status: 'success',
@@ -409,7 +415,7 @@ const PromptView = () => {
                     color={isVoted ? "orange.500" : "inherit"}
                     transition="all 0.2s"
                   >
-                    {likes}
+                    {votes}
                   </Button>
                   <HStack 
                     spacing={2} 

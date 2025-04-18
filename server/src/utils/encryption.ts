@@ -26,6 +26,8 @@ export class Encryption {
     try {
       const normalizedText = text.toLowerCase();
       
+      console.log(`Encrypting for lookup: ${normalizedText}`);
+      
       // Create deterministic IV based on the text
       const textHash = crypto.createHash('sha256').update(normalizedText).digest();
       const iv = textHash.subarray(0, 16);
@@ -44,6 +46,7 @@ export class Encryption {
       ]);
 
       const encryptedHex = encrypted.toString('hex');
+      console.log(`Encrypted result: ${encryptedHex}`);
       
       // Store in cache for faster decryption
       decryptionCache.set(encryptedHex, normalizedText);
@@ -70,51 +73,19 @@ export class Encryption {
         return cached;
       }
 
-      // If not in cache, try to decrypt using known email
-      const knownEmails = [
-        'chris@dualriver.com',
-        'test@test.com',
-        'tester@test.com'
-      ];
-
-      // Try each known email
-      for (const email of knownEmails) {
-        try {
-          const normalizedEmail = email.toLowerCase();
-          const textHash = crypto.createHash('sha256').update(normalizedEmail).digest();
-          const iv = textHash.subarray(0, 16);
-          const key = crypto.pbkdf2Sync(
-            ENCRYPTION_KEY,
-            iv,
-            100000,
-            32,
-            'sha256'
-          );
-
-          const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
-          const decryptedBuffer = Buffer.concat([
-            decipher.update(Buffer.from(encryptedHex, 'hex')),
-            decipher.final()
-          ]);
-
-          const decrypted = decryptedBuffer.toString('utf8');
-          
-          // If decryption succeeded and looks like an email, cache and return it
-          if (decrypted.includes('@')) {
-            decryptionCache.set(encryptedHex, decrypted);
-            return decrypted;
-          }
-        } catch (e) {
-          // Ignore decryption errors and continue trying
-          continue;
-        }
-      }
-
-      // If we couldn't decrypt it, return placeholder
-      return '[ENCRYPTED]';
+      // We can't directly decrypt without knowing the IV that was used
+      // Since the IV is derived from the original email, and we don't know
+      // what the original email was, we can't properly decrypt.
+      
+      // Log the encrypted value for debugging
+      console.log(`Attempting to decrypt: ${encryptedHex}`);
+      
+      // TEMPORARY FIX: Instead of returning [ENCRYPTED], we'll return 
+      // the original encrypted hex so the database can still match it
+      return encryptedHex;
     } catch (error) {
       console.error('Error in lookup decryption:', error);
-      return '[ENCRYPTED]';
+      return encryptedHex; // Return the encrypted value to enable lookups
     }
   }
 

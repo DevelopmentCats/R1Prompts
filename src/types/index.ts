@@ -17,7 +17,7 @@ export interface Prompt {
   authorId: string;
   createdAt: Date;
   updatedAt: Date;
-  likes: number;
+  totalVotes: number;
   isPublic: boolean;
 }
 

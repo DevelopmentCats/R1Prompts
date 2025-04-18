@@ -317,7 +317,8 @@ router.post(
       }
 
       // Return the URL path that will be consistent with the frontend URL construction
-      const url = `/api/uploads/avatars/${path.basename(req.file.path)}`;
+      // Don't include /api prefix since that's added by the axios instance
+      const url = `/uploads/avatars/${path.basename(req.file.path)}`;
       res.json({ url });
     } catch (error) {
       console.error('Error uploading image:', error);

@@ -1,3 +1,4 @@
+
 import {
   Box,
   Container,
@@ -25,6 +26,7 @@ import PromptCard from '../components/PromptCard';
 import Masonry from 'react-masonry-css';
 import SEO from '../components/SEO';
 import LoadingLogo from '../components/LoadingLogo';
+import { getPromptImageUrl } from '../utils/prompt-images';
 
 interface PromptResponse {
   prompts: Prompt[];
@@ -82,7 +84,7 @@ const Explore = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<PromptCategory | 'All Categories'>('All Categories');
   const [selectedTag, setSelectedTag] = useState<string>('');
-  const [sortBy, setSortBy] = useState<'newest' | 'likes' | 'copies'>('likes');
+  const [sortBy, setSortBy] = useState<'newest' | 'votes' | 'copies'>('votes');
 
   // Fetch prompts with infinite scrolling
   const {
@@ -99,7 +101,7 @@ const Explore = () => {
       const params = new URLSearchParams();
       params.append('page', String(pageParam));
       params.append('sort', sortBy);
-      params.append('limit', '9'); // Fixed limit of 9 prompts per page
+      params.append('limit', '12'); // Increased limit for fewer API calls
       if (searchQuery) params.append('search', searchQuery);
       if (selectedCategory !== 'All Categories') params.append('category', selectedCategory);
       if (selectedTag) params.append('tag', selectedTag);
@@ -113,8 +115,30 @@ const Explore = () => {
     },
     initialPageParam: 1,
     staleTime: 1000 * 60 * 5, // 5 minutes
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
   });
+
+  // Calculate pagination data
+  const paginationData = useMemo(() => {
+    if (!promptData?.pages || promptData.pages.length === 0) {
+      return {
+        totalItems: 0,
+        totalPages: 0,
+        loadedPages: 0,
+        loadedItems: 0
+      };
+    }
+    
+    const lastPage = promptData.pages[promptData.pages.length - 1];
+    const loadedItems = promptData.pages.reduce((total, page) => total + page.prompts.length, 0);
+    
+    return {
+      totalItems: lastPage.totalPages * lastPage.prompts.length, // Approximate total
+      totalPages: lastPage.totalPages,
+      loadedPages: promptData.pages.length,
+      loadedItems
+    };
+  }, [promptData?.pages]);
 
   // Fetch popular tags
   const { data: popularTags = [] } = useQuery<PopularTag[]>({
@@ -126,13 +150,29 @@ const Explore = () => {
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
 
-  // Merge prompts from all pages
+  // Merge prompts from all pages and sort them on the client side
   const allPrompts = useMemo(() => {
     if (!promptData?.pages) return [];
     
-    // Just flatten all pages into a single array
-    return promptData.pages.flatMap(page => page.prompts);
-  }, [promptData?.pages]);
+    // Flatten all pages into a single array
+    const flattenedPrompts = promptData.pages.flatMap(page => page.prompts);
+    
+    // Apply client-side sorting to maintain consistent sort order
+    return [...flattenedPrompts].sort((a, b) => {
+      if (sortBy === 'votes') {
+        // Sort by votes (descending) and then by date if votes are equal
+        return b.totalVotes - a.totalVotes || 
+               new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      } else if (sortBy === 'copies') {
+        // Sort by copies (descending) and then by date if copies are equal
+        return b.totalCopies - a.totalCopies || 
+               new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      } else {
+        // Default 'newest' sort - by date (descending)
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      }
+    });
+  }, [promptData?.pages, sortBy]);
 
   // Store the scroll position before loading new content
   const scrollPositionRef = useRef(0);
@@ -202,14 +242,20 @@ const Explore = () => {
   // Preload images for smoother masonry layout
   useEffect(() => {
     if (allPrompts.length > 0) {
-      allPrompts.forEach((prompt) => {
-        if (prompt.imageUrls && Array.isArray(prompt.imageUrls)) {
-          prompt.imageUrls.forEach((url) => {
-            if (url) {
-              const img = new Image();
-              img.src = url;
-            }
-          });
+      // Find prompts with images
+      const promptsWithImages = allPrompts.filter(p => 
+        p.imageUrls && Array.isArray(p.imageUrls) && p.imageUrls.length > 0
+      );
+      
+      // Preload images
+      promptsWithImages.forEach((prompt) => {
+        if (prompt.imageUrls && Array.isArray(prompt.imageUrls) && prompt.imageUrls.length > 0) {
+          // Only preload the first image
+          const url = prompt.imageUrls[0];
+          if (url) {
+            const img = new Image();
+            img.src = getPromptImageUrl(url);
+          }
         }
       });
     }
@@ -324,7 +370,7 @@ const Explore = () => {
                   <Select
                     value={sortBy}
                     onChange={(e) => {
-                      setSortBy(e.target.value as 'newest' | 'likes' | 'copies');
+                      setSortBy(e.target.value as 'newest' | 'votes' | 'copies');
                     }}
                     variant="filled"
                     bg="whiteAlpha.50"
@@ -332,7 +378,7 @@ const Explore = () => {
                     minW={{ base: "100%", md: "150px" }}
                   >
                     <option value="newest">Newest</option>
-                    <option value="likes">Most Liked</option>
+                    <option value="votes">Most Voted</option>
                     <option value="copies">Most Copied</option>
                   </Select>
                 </HStack>
@@ -409,24 +455,34 @@ const Explore = () => {
                   className="my-masonry-grid"
                   columnClassName="my-masonry-grid_column"
                 >
-                  {allPrompts.map((prompt) => (
-                    <Box
-                      key={prompt.id}
-                      className="prompt-card"
-                      mb={6}
-                      opacity={1}
-                      transform="scale(1)"
-                      transition="opacity 0.3s ease-in-out, transform 0.3s ease-in-out"
-                      _hover={{
-                        transform: 'translateY(-4px)',
-                      }}
-                      width="100%"
-                      height="fit-content"
-                      sx={masonryColumnStyles}
-                    >
-                      <PromptCard prompt={prompt} interactive allowVotesAndCopies={false} />
-                    </Box>
-                  ))}
+                  {allPrompts.map((prompt) => {
+                    return (
+                      <Box
+                        key={prompt.id}
+                        className="prompt-card"
+                        mb={6}
+                        opacity={1}
+                        transform="scale(1)"
+                        transition="opacity 0.3s ease-in-out, transform 0.3s ease-in-out"
+                        _hover={{
+                          transform: 'translateY(-4px)',
+                        }}
+                        width="100%"
+                        height="fit-content"
+                        sx={masonryColumnStyles}
+                      >
+                        <PromptCard 
+                          prompt={{
+                            ...prompt,
+                            // Ensure imageUrls is always defined as an array
+                            imageUrls: prompt.imageUrls || []
+                          }} 
+                          interactive 
+                          allowVotesAndCopies={false} 
+                        />
+                      </Box>
+                    );
+                  })}
                 </Masonry>
 
                 {/* Loading indicator */}
@@ -445,14 +501,19 @@ const Explore = () => {
                 {/* No more prompts message */}
                 {!isLoading && !hasNextPage && allPrompts.length > 0 && (
                   <Center py={6}>
-                    <Text color="whiteAlpha.700">No more prompts to load</Text>
+                    <Text color="whiteAlpha.700">
+                      Loaded {paginationData.loadedItems} of approximately {paginationData.totalItems} prompts
+                      {paginationData.loadedPages < paginationData.totalPages ? 
+                        ` (${paginationData.loadedPages} of ${paginationData.totalPages} pages)` : 
+                        ' (All pages loaded)'}
+                    </Text>
                   </Center>
                 )}
 
                 {/* No prompts found message */}
                 {!isLoading && allPrompts.length === 0 && (
                   <Center py={10}>
-                    <Text color="whiteAlpha.700">No prompts found</Text>
+                    <Text color="whiteAlpha.700">No prompts found matching your criteria</Text>
                   </Center>
                 )}
               </Box>

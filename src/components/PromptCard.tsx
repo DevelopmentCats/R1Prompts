@@ -37,14 +37,13 @@ interface PromptCardProps {
     content: string;
     category: PromptCategory;
     isPublic: boolean;
-    likes: number;
+    totalVotes: number;
     tags: string[];
-    imageUrls: string[];
+    imageUrls?: string[];
     createdAt: Date;
     updatedAt: Date;
     totalViews: number;
     totalCopies: number;
-    averageRating: number;
     hasVoted?: boolean;
     authorSafe?: {
       id: string;
@@ -105,7 +104,7 @@ const PromptCard = ({
                 return {
                   ...p,
                   hasVoted: newHasVoted,
-                  likes: p.likes + (newHasVoted ? 1 : -1)
+                  totalVotes: p.totalVotes + (newHasVoted ? 1 : -1)
                 };
               }
               return p;
@@ -138,7 +137,7 @@ const PromptCard = ({
                 return {
                   ...p,
                   hasVoted: data.voted,
-                  likes: data.votes
+                  totalVotes: data.votes
                 };
               }
               return p;
@@ -149,6 +148,9 @@ const PromptCard = ({
 
       // Refetch to ensure we're in sync
       queryClient.invalidateQueries({ queryKey: ['prompts'] });
+      
+      // Also update the specific prompt data if available
+      queryClient.invalidateQueries({ queryKey: ['prompt', prompt.id] });
     },
   });
 
@@ -226,6 +228,9 @@ const PromptCard = ({
 
       // Refetch to ensure we're in sync
       queryClient.invalidateQueries({ queryKey: ['prompts'] });
+      
+      // Also update the specific prompt data if available
+      queryClient.invalidateQueries({ queryKey: ['prompt', prompt.id] });
     },
   });
 
@@ -242,8 +247,15 @@ const PromptCard = ({
       flexDirection="column"
       position="relative"
     >
-      {prompt.imageUrls && prompt.imageUrls.length > 0 && (
-        <Box position="relative" paddingTop="56.25%">
+      {prompt.imageUrls && 
+       Array.isArray(prompt.imageUrls) && 
+       prompt.imageUrls.length > 0 && 
+       prompt.imageUrls[0] && (
+        <Box 
+          position="relative" 
+          paddingTop="56.25%"
+          id={`image-container-${prompt.id}`}
+        >
           <Image
             src={getPromptImageUrl(prompt.imageUrls[0])}
             alt={prompt.title}
@@ -269,8 +281,11 @@ const PromptCard = ({
               </Box>
             }
             onError={(e) => {
-              console.error('Failed to load image:', prompt.imageUrls?.[0]);
-              e.currentTarget.style.display = 'none';
+              // Hide the image container on error
+              const container = document.getElementById(`image-container-${prompt.id}`);
+              if (container) {
+                container.style.display = 'none';
+              }
             }}
           />
         </Box>
@@ -424,7 +439,7 @@ const PromptCard = ({
                   onClick={() => voteMutation.mutate()}
                   isLoading={voteMutation.isPending}
                 >
-                  {prompt.likes || 0}
+                  {prompt.totalVotes || 0}
                 </Button>
                 <Button
                   size="sm"
@@ -452,7 +467,7 @@ const PromptCard = ({
                   _hover={{}}
                   _active={{}}
                 >
-                  {prompt.likes || 0}
+                  {prompt.totalVotes || 0}
                 </Button>
                 <Button
                   size="sm"

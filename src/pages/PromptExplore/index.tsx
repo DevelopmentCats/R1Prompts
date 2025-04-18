@@ -33,7 +33,7 @@ interface Prompt {
     id: string;
     username: string;
   };
-  likes: number;
+  totalVotes: number;
   createdAt: string;
   imageUrls: string[];
   tags: string[];
@@ -44,7 +44,7 @@ interface ExtendedPrompt extends Prompt {
   hasCopied?: boolean;
 }
 
-type SortOption = 'recent' | 'likes';
+type SortOption = 'recent' | 'votes';
 
 const breakpointColumns = {
   default: 3,
@@ -142,7 +142,7 @@ const PromptExplore = () => {
               flex="1"
             >
               <option value="recent">Most Recent</option>
-              <option value="likes">Most Liked</option>
+              <option value="votes">Most Voted</option>
             </Select>
           </Flex>
 
@@ -207,7 +207,7 @@ const PromptExplore = () => {
                         isPublic: true,
                         authorSafe: prompt.author,
                         totalCopies: 0,
-                        likes: prompt.likes || 0,
+                        totalVotes: prompt.totalVotes || 0,
                         tags: prompt.tags || [],
                       }}
                       showAuthorLink={false}

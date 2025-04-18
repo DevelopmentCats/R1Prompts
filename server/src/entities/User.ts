@@ -31,29 +31,30 @@ export class User {
       from: (value: string) => {
         if (!value) return '';
         
-        // Remove the 'encrypted:' prefix if it exists
-        const cleanValue = value.replace('encrypted:', '');
-        
-        // If it's a hex string (encrypted), decrypt it
-        if (/^[0-9a-f]{64,}$/i.test(cleanValue)) {
-          return Encryption.decryptForLookup(cleanValue);
+        // If it's an encrypted hex string (matches a pattern of all hex chars)
+        if (/^[0-9a-f]{32,}$/i.test(value)) {
+          // Just return the value as is - for database lookups
+          return value;
         }
         
-        // If it's not a hex string, it's probably already decrypted
-        return cleanValue;
+        // Return unencrypted value
+        return value;
       },
       to: (value: string) => {
         if (!value) return '';
+        
+        // If it's already a hex string (likely encrypted), keep it as is
+        if (/^[0-9a-f]{32,}$/i.test(value)) {
+          return value;
+        }
+        
+        // For login/lookup purposes, return the encrypted value
         try {
-          // If it's already an encrypted value (hex string), keep it
-          if (/^[0-9a-f]{64,}$/i.test(value)) {
-            return value;
-          }
-          // For new/updated emails, just encrypt them without prefix
+          // Always encrypt with lowercase normalization for consistency
           return Encryption.encryptForLookup(value.toLowerCase());
         } catch (error) {
           console.error('Error encrypting email:', error);
-          throw new Error('Failed to encrypt email');
+          return value; // Return original value in case of error
         }
       }
     }

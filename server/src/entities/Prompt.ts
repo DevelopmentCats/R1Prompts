@@ -27,6 +27,7 @@ export enum PromptCategory {
 @Index(['isPublic', 'createdAt']) // Main sorting and filtering
 @Index(['category', 'isPublic']) // Category filtering
 @Index(['isPublic', 'totalCopies']) // Copies sorting
+@Index(['isPublic', 'totalVotes']) // Votes sorting 
 export class Prompt {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -51,16 +52,13 @@ export class Prompt {
   isPublic: boolean = true;
 
   @Column({ default: 0 })
-  likes: number = 0;
+  totalVotes: number = 0; 
 
   @Column({ default: 0 })
   totalViews: number = 0;
 
   @Column({ default: 0 })
   totalCopies: number = 0;
-
-  @Column({ type: 'float', default: 0 })
-  averageRating: number = 0;
 
   @Column('simple-array', { default: '' })
   tags: string[] = [];

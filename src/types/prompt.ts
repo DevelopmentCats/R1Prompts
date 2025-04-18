@@ -20,14 +20,13 @@ export interface Prompt {
   content: string;
   category: PromptCategory;
   isPublic: boolean;
-  likes: number;
+  totalVotes: number;
   tags: string[];
-  imageUrls: string[];
+  imageUrls?: string[];
   createdAt: Date;
   updatedAt: Date;
   totalViews: number;
   totalCopies: number;
-  averageRating: number;
   author: {
     id: string;
     username: string;

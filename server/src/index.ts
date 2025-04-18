@@ -54,10 +54,39 @@ app.use(helmet({
 // Get allowed origins from environment variable
 const allowedOrigins = process.env.CORS_ORIGIN?.split(',') || [];
 
+// Function to check if origin matches any of our allowed domains (including wildcards)
+const isAllowedOrigin = (origin: string | undefined): boolean => {
+  if (!origin) return false;
+  
+  return allowedOrigins.some(allowed => {
+    if (allowed.includes('*')) {
+      // Handle wildcard domains
+      const regex = new RegExp('^' + allowed.replace('*.', '([^.]+\\.)+') + '$');
+      return regex.test(origin);
+    }
+    return origin === allowed;
+  });
+};
+
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://r1prompts.com', 'https://www.r1prompts.com'] 
-    : allowedOrigins,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl, etc)
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (process.env.NODE_ENV === 'production') {
+      if (['https://r1prompts.com', 'https://www.r1prompts.com'].includes(origin)) {
+        return callback(null, true);
+      }
+    } else if (isAllowedOrigin(origin)) {
+      return callback(null, true);
+    }
+
+    // For development convenience, log denied origins
+    console.log(`CORS blocked request from origin: ${origin}`);
+    return callback(null, false);
+  },
   credentials: true
 }));
 
@@ -72,6 +101,13 @@ app.use('/api', (req: Request, res: Response, next: NextFunction) => {
     return next();
   }
   apiLimiter(req, res, next);
+});
+
+// Add a middleware to log API requests
+app.use('/api', (req: Request, res: Response, next: NextFunction) => {
+  console.log(`API Request: ${req.method} ${req.path}`);
+  console.log('Headers:', req.headers);
+  next();
 });
 
 // Serve static files from uploads directory
@@ -93,7 +129,7 @@ app.use('/api/uploads', (req: Request, res: Response, next: NextFunction) => {
     if (origin && ['https://r1prompts.com', 'https://www.r1prompts.com'].includes(origin)) {
       res.setHeader('Access-Control-Allow-Origin', origin);
     }
-  } else if (origin && allowedOrigins.includes(origin)) {
+  } else if (origin && isAllowedOrigin(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -139,13 +175,21 @@ const initializeApp = async () => {
         res.sendFile(path.join(frontendPath, 'index.html'));
       });
     } else {
-      // In development, proxy requests to Vite dev server
-      const { createProxyMiddleware } = require('http-proxy-middleware');
-      app.use('/', createProxyMiddleware({
-        target: 'http://localhost:5173',
-        changeOrigin: true,
-        ws: true,
-      }));
+      // In development mode, don't proxy requests - just handle API routes
+      // and return a simple message for non-API routes
+      app.get('/', (req, res) => {
+        res.send('Backend server running. Frontend is available at http://localhost:3000');
+      });
+      
+      // Handle 404s for non-API routes in development
+      app.use((req, res, next) => {
+        if (!req.path.startsWith('/api')) {
+          return res.status(404).send({
+            message: 'Route not found on backend server. Frontend is at http://localhost:3000'
+          });
+        }
+        next();
+      });
     }
 
     // Error handling middleware

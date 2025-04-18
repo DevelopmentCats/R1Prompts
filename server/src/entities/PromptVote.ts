@@ -3,7 +3,6 @@ import {
     PrimaryGeneratedColumn,
     Column,
     CreateDateColumn,
-    UpdateDateColumn,
     ManyToOne,
     JoinColumn,
     Index,
@@ -28,14 +27,11 @@ export class PromptVote {
     @CreateDateColumn()
     createdAt!: Date;
 
-    @UpdateDateColumn()
-    updatedAt!: Date;
-
-    @ManyToOne(() => Prompt, prompt => prompt.votes)
+    @ManyToOne(() => Prompt, prompt => prompt.votes, { onDelete: 'CASCADE' })
     @JoinColumn({ name: "promptId" })
     prompt!: Prompt;
 
-    @ManyToOne(() => User)
+    @ManyToOne(() => User, { onDelete: 'CASCADE' })
     @JoinColumn({ name: "userId" })
     user!: User;
 }

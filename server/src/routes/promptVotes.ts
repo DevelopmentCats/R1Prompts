@@ -59,9 +59,9 @@ router.post('/:promptId/vote', auth, async (req, res) => {
             });
             
             // Update prompt with accurate count
-            await promptRepository.update(promptId, { likes: voteCount });
+            await promptRepository.update(promptId, { totalVotes: voteCount });
             
-            return res.json({ voted: false, likes: voteCount });
+            return res.json({ voted: false, totalVotes: voteCount });
         } else {
             // Add new vote
             const vote = voteRepository.create({
@@ -76,9 +76,9 @@ router.post('/:promptId/vote', auth, async (req, res) => {
             });
             
             // Update prompt with accurate count
-            await promptRepository.update(promptId, { likes: voteCount });
+            await promptRepository.update(promptId, { totalVotes: voteCount });
             
-            return res.json({ voted: true, likes: voteCount });
+            return res.json({ voted: true, totalVotes: voteCount });
         }
     } catch (error) {
         console.error('Error in vote endpoint:', error);

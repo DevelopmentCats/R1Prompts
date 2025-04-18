@@ -12,11 +12,19 @@ export default defineConfig({
   },
   server: {
     port: 3000,
-    host: '0.0.0.0',
-    hmr: false,
+    host: true,
+    hmr: true,
     watch: {
-      usePolling: false
+      usePolling: true
     },
-    middlewareMode: false
+    middlewareMode: false,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        secure: false,
+        ws: true
+      }
+    }
   },
 });
